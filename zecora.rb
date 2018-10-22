@@ -28,8 +28,6 @@ module Zecora
     # but it is something easier to configure at runtime.
     APP_IDENTIFIER = ENV['GITHUB_APP_IDENTIFIER']
 
-    RECASTAI_TOKEN = ENV['RECASTAI_TOKEN']
-
     ########## Before each request to our app
     #
     # Before each request to our app, we want to do two things
@@ -99,20 +97,81 @@ module Zecora
       # triggering this event
       unless @payload['installation'].nil? || @payload['installation']['id'].nil?
         installation_id ||= @payload['installation']['id']
+
+        # the following line throws on uninstall! There won't be an installation token.
+        begin
         installation_token = @app_client.create_app_installation_access_token(installation_id)[:token]
         @client ||= Octokit::Client.new(bearer_token: installation_token)
+        rescue Octokit::NotFound
+          @client = nil # we are probably being uninstalled.
+        end
       end
 
       @event = headers['HTTP_X_GITHUB_EVENT']
     end
 
+    ########## Helpers
+    #
+    # These functions are going to help us do some tasks that we don't want clogging up the happy paths above, or
+    # that need to be done repeatedly. You can add anything you like here, really!
+    #
+
     helpers do
+
+      def delete_installation()
+        # We were installed on a wrapper repo, but now we have been removed. Forget about this repo
+        puts 'delete_installation'
+
+      end
+
+      def create_installation()
+        # A new repo has installed us, yay! See if it's a wrapper repo, and if so, remember it and its details
+        puts 'create installation'
+      end
+
+      def update_installation()
+        # A wrapper repo that we're installed into has pushed up new code. There is a chance that they have
+        # updated their Zecora configuration. If so, update our memory of that repo's settings.
+
+      end
+
+      ######
+
+      def create_release()
+        # The watched repo has—maybe—made a new release! We need to check if this really is a new release,
+        # and if it is, create a new testing branch in the wrapper repo
+      end
 
     end
 
+    ########## Events
+    #
+    # This is the webhook endpoint that GH will call with events, and hence where we will do our event handling
+    #
+
     desc 'Receive GitHub webhooks.'
     post ':events' do
-      authenticate!
+      # What kind of event?
+      # Installation event—persist app details, and subscribe to public feed of target library repository
+      # New [tag|branch] on taget library repository: Dig up what is watching it, and create a new testing branch, and notify
+      # puts request.env
+      puts request.env['HTTP_X_GITHUB_EVENT']
+
+      case request.env['HTTP_X_GITHUB_EVENT']
+      when 'installation'
+        case @payload['action']
+        when 'deleted'
+          delete_installation
+        when 'created'
+          create_installation
+          # ALso need to update this information on any push to the main branch on the wrapper repo!
+        end
+
+        ## Events on watched repos
+      when 'create'
+        create_release
+      end
+
       'ok'
     end
 
