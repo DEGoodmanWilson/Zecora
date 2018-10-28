@@ -140,6 +140,20 @@ module Zecora
       def create_release()
         # The watched repo has—maybe—made a new release! We need to check if this really is a new release,
         # and if it is, create a new testing branch in the wrapper repo
+
+        # TODO this is the super tricky part!
+        # First, open `conanfile.py` and update the release number. In MOST cases, it will be on a line like
+        # `    version = "0.9.51"`
+        # In the remainder of the cases where it isn't—well, I'd like to know about them.
+        # We'll also need to find any lines that reference `version` or that hard-code a version,
+        # and bump them
+        # We'll _also_ want to look for any _other_ references to the version number and bump those.
+        # This will require knowing what the previous version we are bumping _from_ is, to achieve
+        # this effeciently
+
+        # Second, create that new branch.
+
+        # Look to the version bump script in Luna for inspiration
       end
 
     end
