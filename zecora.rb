@@ -28,6 +28,9 @@ module Zecora
     # but it is something easier to configure at runtime.
     APP_IDENTIFIER = ENV['GITHUB_APP_IDENTIFIER']
 
+    # Get our MongoDB url and credentials. Why did I choose MongoDB? Because it's the devil I know.
+    MONGODB_URL = ENV['MONGODB_URL']
+
     ########## Before each request to our app
     #
     # Before each request to our app, we want to do two things
