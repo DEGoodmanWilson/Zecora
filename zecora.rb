@@ -5,6 +5,9 @@ require 'openssl'
 require 'octokit'
 require 'jwt'
 require 'time' # This is necessary to get the ISO 8601 representation of a Time object
+require 'base64'
+require 'mongo'
+
 
 module Zecora
   class API < Grape::API
@@ -30,6 +33,8 @@ module Zecora
 
     # Get our MongoDB url and credentials. Why did I choose MongoDB? Because it's the devil I know.
     MONGODB_URL = ENV['MONGODB_URL']
+
+    MONGODB = Mongo::Client.new(MONGODB_URL)
 
     ########## Before each request to our app
     #
@@ -103,14 +108,16 @@ module Zecora
 
         # the following line throws on uninstall! There won't be an installation token.
         begin
-        installation_token = @app_client.create_app_installation_access_token(installation_id)[:token]
-        @client ||= Octokit::Client.new(bearer_token: installation_token)
+          installation_token = @app_client.create_app_installation_access_token(installation_id)[:token]
+          @client ||= Octokit::Client.new(bearer_token: installation_token)
         rescue Octokit::NotFound
           @client = nil # we are probably being uninstalled.
         end
       end
 
       @event = headers['HTTP_X_GITHUB_EVENT']
+
+      @mongo_collection = MONGODB[:zecora]
     end
 
     ########## Helpers
@@ -121,21 +128,37 @@ module Zecora
 
     helpers do
 
-      def delete_installation()
+      def delete_installation(reponame)
         # We were installed on a wrapper repo, but now we have been removed. Forget about this repo
         puts 'delete_installation'
+        @mongo_collection.delete_one({installation_repo: reponame})
+      end
+
+      def delete_installations()
+        puts 'delete installations'
+
+        @mongo_collection.delete_many({installation_id: @payload['installation']['id']})
 
       end
 
-      def create_installation()
-        # A new repo has installed us, yay! See if it's a wrapper repo, and if so, remember it and its details
-        puts 'create installation'
-      end
+      def create_installation(reponame)
+        # look for a file called .zecora.json
+        begin
+          response = @client.contents(reponame, :path => '.zecora.json')
+        rescue Octokit::NotFound
+          # TODO no `.zecora.json` found. We'll just check each push to see if a .zecora.json is added later.
+          return
+        end
+        zecora_conf = JSON.parse(Base64.decode64(response['content']))
+        zecora_conf['installation_id'] = @payload['installation']['id']
+        zecora_conf['installation_repo'] = reponame
+        puts zecora_conf
+        # TODO schema testing on the results!
 
-      def update_installation()
-        # A wrapper repo that we're installed into has pushed up new code. There is a chance that they have
-        # updated their Zecora configuration. If so, update our memory of that repo's settings.
+        # Save the contents in a DB
+        @mongo_collection.update_one({installation_repo: reponame}, zecora_conf, {upsert: true})
 
+        # start listening to target repo
       end
 
       ######
@@ -178,16 +201,33 @@ module Zecora
       when 'installation'
         case @payload['action']
         when 'deleted'
-          delete_installation
+          delete_installations
         when 'created'
-          create_installation
+          @payload['repositories'].each do |repo|
+            create_installation repo['full_name']
+          end
           # ALso need to update this information on any push to the main branch on the wrapper repo!
         end
 
-        ## Events on watched repos
+      when 'installation_repositories'
+        # a new repo has been added or removed from an existing installation
+        case @payload['action']
+        when 'added'
+          @payload['repositories_added'].each do |repo|
+            create_installation repo['full_name']
+          end
+        when 'removed'
+          @payload['repositories_removed'].each do |repo|
+            delete_installation repo['full_name']
+          end
+        end
+
       when 'create'
-        create_release
+        ## Events on watched repos
+        create_installation # this function upserts :D
+
       end
+
 
       'ok'
     end
