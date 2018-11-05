@@ -132,12 +132,17 @@ module Zecora
         # We were installed on a wrapper repo, but now we have been removed. Forget about this repo
         puts 'delete_installation'
         @mongo_collection.delete_one({installation_repo: reponame})
+
+        # TODO check to see if we need to unsubscribe to the target repo
+
       end
 
       def delete_installations()
         puts 'delete installations'
 
         @mongo_collection.delete_many({installation_id: @payload['installation']['id']})
+
+        # TODO figure out if we need to unsubscribe to any target repos
 
       end
 
@@ -158,7 +163,7 @@ module Zecora
         # Save the contents in a DB
         @mongo_collection.update_one({installation_repo: reponame}, zecora_conf, {upsert: true})
 
-        # start listening to target repo
+        # start listening to target repo using GitHub PubSubHubbub https://developer.github.com/v3/repos/hooks/#pubsubhubbub
       end
 
       ######
